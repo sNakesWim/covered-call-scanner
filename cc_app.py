@@ -643,64 +643,65 @@ def get_next_earnings(tkr: yf.Ticker) -> str | None:
     return None
 
 
-def scan_single(symbol: str, exp_str: str, mode: str, include_earn_bef_exp: bool):
+def scan_single(symbol, expiration, mode, include_earn_bef_exp):
+    print(f"Scanning {symbol} for {expiration} ({mode})")
     try:
-        tkr = yf.Ticker(symbol)
-        exps = tkr.options or []
-        if exp_str not in exps:
-            return None
-        exp_use = exp_str
+        t = yf.Ticker(symbol)
 
-        exp_ts = pd.to_datetime(exp_str, errors="coerce")
-        if pd.isna(exp_ts):
-            return None
-
-        # earnings info
-        earn_str = get_next_earnings(tkr)
-        earn_flag = ""
-        if earn_str:
-            earn_ts = pd.to_datetime(earn_str, errors="coerce")
-            if pd.notna(earn_ts) and earn_ts.date() <= exp_ts.date():
-                earn_flag = "⚠️"
-
-        # filter out earnings-before-expiry if user said no
-        if not include_earn_bef_exp and earn_flag == "⚠️":
+        # 1) Check the available expirations first
+        try:
+            exps = list(t.options)
+            print(f"{symbol} expirations: {exps[:10]} ... total={len(exps)}")
+            if expiration not in exps:
+                print(f"{symbol}: requested expiration {expiration} not in options list")
+                return None
+        except Exception as e:
+            print(f"{symbol}: failed to get options list: {e}")
             return None
 
-        # spot
-        spot = float(tkr.fast_info.last_price)
-        if not np.isfinite(spot) or spot <= 0:
+        # 2) Get spot
+        hist = t.history(period="1d")
+        if hist.empty:
+            print(f"{symbol}: empty price history")
             return None
+        spot = float(hist["Close"].iloc[-1])
+        print(f"{symbol}: spot={spot}")
 
-        calls = tkr.option_chain(exp_use).calls
-        if calls is None or calls.empty:
-            return None
+        # 3) Get option chain
+        chain = t.option_chain(expiration)
+        calls = chain.calls
+        print(f"{symbol}: {len(calls)} calls rows")
 
+        # 4) Use your existing selection logic
         row = pick_call_row(calls, spot, mode)
         if row is None:
+            print(f"{symbol}: no call row selected (filters too strict?)")
             return None
 
-        strike = float(row["strike"])
         bid = float(row.get("bid") or float("nan"))
         ask = float(row.get("ask") or float("nan"))
         last = float(row.get("lastPrice") or float("nan"))
         mid = mid_price(bid, ask, last)
         if not np.isfinite(mid):
+            print(f"{symbol}: mid price not finite")
             return None
 
+        strike = float(row["strike"])
         prem_ret_pct = ((strike - spot) + mid) / spot * 100.0
 
+        # build your result dict exactly as before
         return {
-            "Symbol": symbol.upper(),
-            "Spot": spot,
-            "Expiry": exp_use,
-            "Strike": strike,
-            "Mid": mid,
-            "PremiumReturn": prem_ret_pct,
-            "NextEarnings": earn_str,
-            "EarningsFlag": earn_flag,
+            "Symbol": symbol,
+            "Spot": round(spot, 2),
+            "Expiry": expiration,
+            "Strike": round(strike, 2),
+            "Mid": round(mid, 2),
+            "PremiumReturn": round(prem_ret_pct, 2),
+            "NextEarnings": next_earn_str,
+            "EarningsBeforeExpiry": earn_before,
         }
-    except Exception:
+    except Exception as e:
+        print(f"Error on {symbol}: {e}")
         return None
 
 
@@ -765,4 +766,4 @@ def index():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="127.0.0.1", port=5001, debug=True)
