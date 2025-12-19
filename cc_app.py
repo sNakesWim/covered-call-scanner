@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-import time  # if not already imported
+import datetime as dt  # if not already imported
 
 MIN_OI = 100          # minimum open interest
 MIN_VOL = 10          # minimum option volume
