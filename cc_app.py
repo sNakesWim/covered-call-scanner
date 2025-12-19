@@ -2,7 +2,7 @@ from flask import Flask, request, render_template_string
 import yfinance as yf
 import pandas as pd
 import numpy as np
-
+import time
 import datetime as dt  # if not already imported
 
 MIN_OI = 100          # minimum open interest
@@ -648,15 +648,28 @@ def scan_single(symbol, expiration, mode, include_earn_bef_exp):
     try:
         t = yf.Ticker(symbol)
 
-        # 1) Confirm expiration exists
-        try:
-            exps = list(t.options)
-            print(f"{symbol} expirations: {exps[:10]} ... total={len(exps)}")
-            if expiration not in exps:
-                print(f"{symbol}: requested expiration {expiration} not in options list")
+        # 1) Confirm expiration exists, with simple retry if rate limited
+        exps = None
+        for attempt in range(3):
+            try:
+                exps = list(t.options)
+                break
+            except Exception as e:
+                msg = str(e)
+                if "Too Many Requests" in msg:
+                    print(f"{symbol}: rate limited getting options list, retry {attempt+1}/3")
+                    time.sleep(3)
+                    continue
+                print(f"{symbol}: failed to get options list: {e}")
                 return None
-        except Exception as e:
-            print(f"{symbol}: failed to get options list: {e}")
+
+        if not exps:
+            print(f"{symbol}: no expirations returned after retries")
+            return None
+
+        print(f"{symbol} expirations: {exps[:10]} ... total={len(exps)}")
+        if expiration not in exps:
+            print(f"{symbol}: requested expiration {expiration} not in options list")
             return None
 
         # 2) Spot price
