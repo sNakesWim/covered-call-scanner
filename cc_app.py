@@ -648,7 +648,7 @@ def scan_single(symbol, expiration, mode, include_earn_bef_exp):
     try:
         t = yf.Ticker(symbol)
 
-        # 1. Validate that expiration exists
+        # 1) Confirm expiration exists
         try:
             exps = list(t.options)
             print(f"{symbol} expirations: {exps[:10]} ... total={len(exps)}")
@@ -659,7 +659,7 @@ def scan_single(symbol, expiration, mode, include_earn_bef_exp):
             print(f"{symbol}: failed to get options list: {e}")
             return None
 
-        # 2. Get spot
+        # 2) Spot price
         hist = t.history(period="1d")
         if hist.empty:
             print(f"{symbol}: empty price history")
@@ -667,12 +667,12 @@ def scan_single(symbol, expiration, mode, include_earn_bef_exp):
         spot = float(hist["Close"].iloc[-1])
         print(f"{symbol}: spot={spot}")
 
-        # 3. Get option chain
+        # 3) Option chain
         chain = t.option_chain(expiration)
         calls = chain.calls
         print(f"{symbol}: {len(calls)} calls rows")
 
-        # 4. Pick the call row using your filters
+        # 4) Pick call row
         row = pick_call_row(calls, spot, mode)
         if row is None:
             print(f"{symbol}: no call row selected")
@@ -689,7 +689,7 @@ def scan_single(symbol, expiration, mode, include_earn_bef_exp):
         strike = float(row["strike"])
         prem_ret_pct = ((strike - spot) + mid) / spot * 100.0
 
-        # 5. Earnings info - always define defaults
+        # 5) Earnings info: always define defaults
         next_earn_str = "N/A"
         earn_before = False
         try:
@@ -700,13 +700,14 @@ def scan_single(symbol, expiration, mode, include_earn_bef_exp):
                 exp_date = dt.datetime.strptime(expiration, "%Y-%m-%d").date()
                 earn_before = next_earn_date <= exp_date
 
-                # If user chose to exclude, skip this symbol
+                # If user chose to exclude earnings before expiry, skip
                 if not include_earn_bef_exp and earn_before:
                     print(f"{symbol}: earnings before expiry, skipping due to setting")
                     return None
         except Exception as e:
             print(f"{symbol}: earnings lookup error: {e}")
 
+        # 6) Build result dict
         return {
             "Symbol": symbol,
             "Spot": round(spot, 2),
